@@ -1,31 +1,29 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
-from ..core.database import Base
+from app.core.database import Base
 
 class Group(Base):
     __tablename__ = "groups"
     
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
-    days = relationship("Day", back_populates="group")
+    name = Column(String(50), unique=True, index=True)
+    description = Column(Text, nullable=True)
+    
+    # Связь с расписанием
+    schedules = relationship("Schedule", back_populates="group")
 
-class Day(Base):
-    __tablename__ = "days"
+class Schedule(Base):
+    __tablename__ = "schedules"
     
     id = Column(Integer, primary_key=True, index=True)
-    date = Column(Date)
     group_id = Column(Integer, ForeignKey("groups.id"))
-    group = relationship("Group", back_populates="days")
-    lessons = relationship("Lesson", back_populates="day")
-
-class Lesson(Base):
-    __tablename__ = "lessons"
+    day_of_week = Column(String(20))  # Понедельник, Вторник, etc.
+    lesson_number = Column(Integer)  # 1, 2, 3, etc.
+    subject = Column(String(100))
+    teacher = Column(String(100), nullable=True)
+    room = Column(String(20), nullable=True)
+    time_start = Column(String(10), nullable=True)  # 09:00
+    time_end = Column(String(10), nullable=True)    # 10:30
     
-    id = Column(Integer, primary_key=True, index=True)
-    day_id = Column(Integer, ForeignKey("days.id"))
-    time = Column(String)
-    subject = Column(String)
-    type = Column(String)
-    classroom = Column(String)
-    teacher = Column(String)
-    day = relationship("Day", back_populates="lessons")
+    # Связь с группой
+    group = relationship("Group", back_populates="schedules")

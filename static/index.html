@@ -8,38 +8,39 @@
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <select id="groupSelect" class="group-select">
-        <option value="">Выберите группу</option>
-    </select>
-
-    <div class="current-date">
-        Сегодня: <span id="todayDate"></span>
-    </div>
-
-    <div class="nav-buttons">
-        <button id="prev-day" class="nav-button">← Пред. день</button>
-        <button id="date-picker" class="nav-button date-picker-button">Выбрать дату</button>
-        <button id="next-day" class="nav-button">След. день →</button>
-    </div>
-
-    <div class="schedule-container" id="scheduleContainer">
-        <!-- Расписание будет добавлено через JavaScript -->
-    </div>
-
-    <div id="datePickerModal" class="modal">
-        <div class="modal-content">
-            <div class="date-picker-container">
-                <div class="picker-wheels">
-                    <select id="dayWheel" class="wheel"></select>
-                    <select id="monthWheel" class="wheel"></select>
-                    <select id="yearWheel" class="wheel"></select>
-                </div>
-                <div class="picker-buttons">
-                    <button id="cancelDate" class="modal-button">Отмена</button>
-                    <button id="confirmDate" class="modal-button confirm">OK</button>
-                </div>
+    <div class="container">
+        <header class="header">
+            <h1>📅 Расписание</h1>
+            <div class="group-selector">
+                <select id="groupSelect">
+                    <option value="">Выберите группу</option>
+                </select>
             </div>
-        </div>
+        </header>
+
+        <main class="main">
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Загрузка расписания...</p>
+            </div>
+
+            <div id="error" class="error hidden">
+                <p>❌ Ошибка при загрузке расписания</p>
+                <button onclick="loadSchedule()">Повторить</button>
+            </div>
+
+            <div id="schedule" class="schedule hidden">
+                <div id="scheduleContent"></div>
+            </div>
+
+            <div id="empty" class="empty hidden">
+                <p>📝 Расписание не найдено</p>
+            </div>
+        </main>
+
+        <footer class="footer">
+            <p>🤖 Schedule Bot</p>
+        </footer>
     </div>
 
     <script src="js/app.js"></script>

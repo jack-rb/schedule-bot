@@ -1,15 +1,21 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from ..core.config import settings
+from app.core.config import settings
 
-SQLALCHEMY_DATABASE_URL = settings.DATABASE_URL
+# Создаем движок базы данных
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {}
+)
 
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Создаем фабрику сессий
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Базовый класс для моделей
 Base = declarative_base()
 
+# Функция для получения сессии БД
 def get_db():
     db = SessionLocal()
     try:

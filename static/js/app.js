@@ -1,221 +1,230 @@
-const tg = window.Telegram.WebApp;
+// Инициализация Telegram Web App
+let tg = window.Telegram.WebApp;
 
-// Инициализация Telegram Mini App
-tg.ready();
-tg.expand();
-
-// Настройка темы
-function applyTheme() {
+// Инициализация приложения
+document.addEventListener('DOMContentLoaded', function() {
+    // Инициализируем Telegram Web App
+    tg.ready();
+    tg.expand();
+    
+    // Устанавливаем тему
     document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color || '#ffffff');
     document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color || '#000000');
     document.documentElement.style.setProperty('--tg-theme-hint-color', tg.themeParams.hint_color || '#999999');
-    document.documentElement.style.setProperty('--tg-theme-link-color', tg.themeParams.link_color || '#2678b6');
-    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#2678b6');
+    document.documentElement.style.setProperty('--tg-theme-button-color', tg.themeParams.button_color || '#2481cc');
     document.documentElement.style.setProperty('--tg-theme-button-text-color', tg.themeParams.button_text_color || '#ffffff');
-}
-
-function getCurrentDateUTC4() {
-    const date = new Date();
-    return date;
-}
-
-let currentDate = getCurrentDateUTC4();
-let selectedGroupId = null;
-
-function formatDate(date, isToday = false) {
-    const days = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
-    const day = days[date.getDay()];
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
+    document.documentElement.style.setProperty('--tg-theme-secondary-bg-color', tg.themeParams.secondary_bg_color || '#f8f9fa');
     
-    if (isToday) {
-        return `${day}, ${dd}.${mm}.${yyyy}`;
-    }
-    return `${day} ${dd}.${mm}.${yyyy}`;
-}
-
-function updateTodayDate() {
-    const todayElement = document.getElementById('todayDate');
-    todayElement.textContent = formatDate(getCurrentDateUTC4(), true);
-}
-
-function displaySchedule(schedule, selectedDate) {
-    const container = document.getElementById('scheduleContainer');
-    container.innerHTML = '';
-
-    const dayHeader = document.createElement('div');
-    dayHeader.className = 'day-header';
+    // Загружаем группы при старте
+    loadGroups();
     
-    if (schedule && schedule.date) {
-        dayHeader.textContent = schedule.date;
-    } else {
-        const days = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
-        const day = selectedDate.getDate().toString().padStart(2, '0');
-        const month = (selectedDate.getMonth() + 1).toString().padStart(2, '0');
-        const year = selectedDate.getFullYear();
-        dayHeader.textContent = `${days[selectedDate.getDay()]} ${day}.${month}.${year}`;
-    }
-    container.appendChild(dayHeader);
+    // Обработчик изменения группы
+    document.getElementById('groupSelect').addEventListener('change', function() {
+        const selectedGroup = this.value;
+        if (selectedGroup) {
+            loadSchedule(selectedGroup);
+        } else {
+            hideAllStates();
+            showState('empty');
+        }
+    });
+});
 
-    if (schedule && schedule.lessons && schedule.lessons.length > 0) {
-        schedule.lessons
-            .sort((a, b) => a.time.localeCompare(b.time))
-            .forEach(lesson => {
-                const lessonBlock = document.createElement('div');
-                lessonBlock.className = 'lesson-block';
-                lessonBlock.innerHTML = `
-                    <div class="time-slot">${lesson.time}</div>
-                    <div class="subject">${lesson.subject}</div>
-                    <div class="details">
-                        ${lesson.type}<br>
-                        Аудитория: ${lesson.classroom}<br>
-                        Преподаватель: ${lesson.teacher}
-                    </div>
-                `;
-                container.appendChild(lessonBlock);
-            });
-    } else {
-        container.innerHTML += '<div class="empty-schedule">Нет занятий в этот день</div>';
-    }
-}
-
+// Загрузка групп
 async function loadGroups() {
     try {
-        tg.showAlert('Загрузка групп...');
-        const response = await fetch('/groups/');
-        if (response.ok) {
-            const groups = await response.json();
-            const select = document.getElementById('groupSelect');
-            select.innerHTML = '<option value="">Выберите группу</option>';
+        showState('loading');
+        
+        const response = await fetch('/api/schedule');
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            // Извлекаем уникальные группы
+            const groups = [...new Set(data.data.map(item => item.group.name))];
+            
+            const groupSelect = document.getElementById('groupSelect');
+            
+            // Очищаем существующие опции
+            groupSelect.innerHTML = '<option value="">Выберите группу</option>';
+            
+            // Добавляем группы
             groups.forEach(group => {
                 const option = document.createElement('option');
-                option.value = group.id;
-                option.textContent = group.name;
-                select.appendChild(option);
+                option.value = group;
+                option.textContent = group;
+                groupSelect.appendChild(option);
             });
-            tg.hideAlert();
+            
+            hideAllStates();
+            showState('empty');
         } else {
-            tg.showAlert('Ошибка загрузки групп');
+            throw new Error(data.error || 'Ошибка загрузки групп');
         }
     } catch (error) {
         console.error('Ошибка загрузки групп:', error);
-        tg.showAlert('Ошибка загрузки групп');
+        showError('Ошибка загрузки групп: ' + error.message);
     }
 }
 
-async function loadSchedule() {
-    if (!selectedGroupId) return;
-
-    const adjustedDate = new Date(currentDate);
-    adjustedDate.setDate(adjustedDate.getDate() + 1);
-    const dateStr = adjustedDate.toISOString().split('T')[0];
-
+// Загрузка расписания
+async function loadSchedule(groupName = null) {
     try {
-        tg.showAlert('Загрузка расписания...');
-        const response = await fetch(`/groups/${selectedGroupId}/schedule/${dateStr}`);
-        if (response.ok) {
-            const schedule = await response.json();
-            displaySchedule(schedule, currentDate);
-            tg.hideAlert();
+        showState('loading');
+        
+        const url = groupName ? `/api/schedule/${encodeURIComponent(groupName)}` : '/api/schedule';
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+            displaySchedule(data.data);
         } else {
-            displaySchedule(null, currentDate);
-            tg.hideAlert();
+            throw new Error(data.error || 'Ошибка загрузки расписания');
         }
     } catch (error) {
         console.error('Ошибка загрузки расписания:', error);
-        displaySchedule(null, currentDate);
-        tg.showAlert('Ошибка загрузки расписания');
+        showError('Ошибка загрузки расписания: ' + error.message);
     }
 }
 
-function initDatePicker() {
-    const dayWheel = document.getElementById('dayWheel');
-    const monthWheel = document.getElementById('monthWheel');
-    const yearWheel = document.getElementById('yearWheel');
-    
-    const today = new Date();
-    
-    for (let i = 1; i <= 31; i++) {
-        const option = document.createElement('option');
-        option.value = i;
-        option.text = i.toString().padStart(2, '0');
-        dayWheel.appendChild(option);
+// Отображение расписания
+function displaySchedule(schedules) {
+    if (!schedules || schedules.length === 0) {
+        showState('empty');
+        return;
     }
-    dayWheel.value = today.getDate();
     
-    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
-                   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-    months.forEach((month, i) => {
-        const option = document.createElement('option');
-        option.value = i + 1;
-        option.text = month;
-        monthWheel.appendChild(option);
+    const scheduleContent = document.getElementById('scheduleContent');
+    scheduleContent.innerHTML = '';
+    
+    // Группируем расписание по дням недели
+    const scheduleByDay = {};
+    
+    schedules.forEach(schedule => {
+        const day = schedule.day_of_week;
+        if (!scheduleByDay[day]) {
+            scheduleByDay[day] = [];
+        }
+        scheduleByDay[day].push(schedule);
     });
-    monthWheel.value = today.getMonth() + 1;
     
-    const currentYear = today.getFullYear();
-    for (let year = currentYear - 1; year <= currentYear + 1; year++) {
-        const option = document.createElement('option');
-        option.value = year;
-        option.text = year.toString();
-        yearWheel.appendChild(option);
-    }
-    yearWheel.value = currentYear;
+    // Сортируем дни недели
+    const dayOrder = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+    
+    dayOrder.forEach(day => {
+        if (scheduleByDay[day]) {
+            const daySchedule = createDaySchedule(day, scheduleByDay[day]);
+            scheduleContent.appendChild(daySchedule);
+        }
+    });
+    
+    showState('schedule');
 }
 
-// Event Listeners
-document.getElementById('groupSelect').addEventListener('change', (e) => {
-    selectedGroupId = e.target.value;
-    if (selectedGroupId) {
-        loadSchedule();
-    }
-});
-
-document.getElementById('prev-day').addEventListener('click', () => {
-    currentDate.setDate(currentDate.getDate() - 1);
-    loadSchedule();
-});
-
-document.getElementById('next-day').addEventListener('click', () => {
-    currentDate.setDate(currentDate.getDate() + 1);
-    loadSchedule();
-});
-
-document.getElementById('date-picker').addEventListener('click', () => {
-    document.getElementById('datePickerModal').style.display = 'block';
-});
-
-document.getElementById('cancelDate').addEventListener('click', () => {
-    document.getElementById('datePickerModal').style.display = 'none';
-});
-
-document.getElementById('confirmDate').addEventListener('click', () => {
-    const day = document.getElementById('dayWheel').value;
-    const month = document.getElementById('monthWheel').value;
-    const year = document.getElementById('yearWheel').value;
-    
-    currentDate = new Date(year, month - 1, day);
+// Создание блока расписания на день
+function createDaySchedule(dayName, lessons) {
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'day-schedule fade-in';
     
     const dayHeader = document.createElement('div');
     dayHeader.className = 'day-header';
+    dayHeader.textContent = dayName;
     
-    const days = ['Воскресенье', 'Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота'];
-    const dayName = days[currentDate.getDay()];
-    const formattedDate = `${dayName} ${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year}`;
-    dayHeader.textContent = formattedDate;
+    const lessonsDiv = document.createElement('div');
+    lessonsDiv.className = 'lessons';
     
-    const container = document.getElementById('scheduleContainer');
-    container.innerHTML = '';
-    container.appendChild(dayHeader);
+    // Сортируем уроки по номеру
+    lessons.sort((a, b) => a.lesson_number - b.lesson_number);
     
-    loadSchedule();
+    lessons.forEach(lesson => {
+        const lessonDiv = createLessonElement(lesson);
+        lessonsDiv.appendChild(lessonDiv);
+    });
     
-    document.getElementById('datePickerModal').style.display = 'none';
+    dayDiv.appendChild(dayHeader);
+    dayDiv.appendChild(lessonsDiv);
+    
+    return dayDiv;
+}
+
+// Создание элемента урока
+function createLessonElement(lesson) {
+    const lessonDiv = document.createElement('div');
+    lessonDiv.className = 'lesson';
+    
+    const lessonNumber = document.createElement('div');
+    lessonNumber.className = 'lesson-number';
+    lessonNumber.textContent = lesson.lesson_number;
+    
+    const lessonContent = document.createElement('div');
+    lessonContent.className = 'lesson-content';
+    
+    const lessonSubject = document.createElement('div');
+    lessonSubject.className = 'lesson-subject';
+    lessonSubject.textContent = lesson.subject;
+    
+    const lessonDetails = document.createElement('div');
+    lessonDetails.className = 'lesson-details';
+    
+    // Добавляем детали урока
+    const details = [];
+    
+    if (lesson.time_start && lesson.time_end) {
+        details.push(`🕐 ${lesson.time_start}-${lesson.time_end}`);
+    }
+    
+    if (lesson.room) {
+        details.push(`🏠 ${lesson.room}`);
+    }
+    
+    if (lesson.teacher) {
+        details.push(`👨‍🏫 ${lesson.teacher}`);
+    }
+    
+    details.forEach((detail, index) => {
+        const detailSpan = document.createElement('span');
+        detailSpan.className = 'lesson-detail';
+        detailSpan.textContent = detail;
+        lessonDetails.appendChild(detailSpan);
+    });
+    
+    lessonContent.appendChild(lessonSubject);
+    lessonContent.appendChild(lessonDetails);
+    
+    lessonDiv.appendChild(lessonNumber);
+    lessonDiv.appendChild(lessonContent);
+    
+    return lessonDiv;
+}
+
+// Показать состояние
+function showState(state) {
+    hideAllStates();
+    document.getElementById(state).classList.remove('hidden');
+}
+
+// Скрыть все состояния
+function hideAllStates() {
+    const states = ['loading', 'error', 'empty', 'schedule'];
+    states.forEach(state => {
+        document.getElementById(state).classList.add('hidden');
+    });
+}
+
+// Показать ошибку
+function showError(message) {
+    const errorDiv = document.getElementById('error');
+    const errorText = errorDiv.querySelector('p');
+    errorText.textContent = message;
+    showState('error');
+}
+
+// Обработка ошибок сети
+window.addEventListener('online', function() {
+    console.log('Соединение восстановлено');
+    loadGroups();
 });
 
-// Инициализация
-applyTheme();
-updateTodayDate();
-loadGroups();
-initDatePicker(); 
+window.addEventListener('offline', function() {
+    console.log('Соединение потеряно');
+    showError('Нет подключения к интернету');
+}); 

@@ -1,63 +1,68 @@
+import os
 import asyncio
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
-from typing import List
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
+from contextlib import asynccontextmanager
 
-from .core.database import get_db
-from .services.schedule import ScheduleService
-from .schemas.schedule import Group, Day, Lesson
-from .bot.bot import bot, setup_bot
+from app.core.config import settings
+from app.core.database import engine, Base
+from app.bot.bot import bot, dp
+from app.services.schedule import ScheduleService
 
-app = FastAPI(title="Schedule API")
+# Создаем таблицы при запуске
+Base.metadata.create_all(bind=engine)
 
-# Монтируем статические файлы
-app.mount("/static", StaticFiles(directory="static"), name="static")
-app.mount("/css", StaticFiles(directory="static/css"), name="css")
-app.mount("/js", StaticFiles(directory="static/js"), name="js")
-
-@app.get("/")
-async def root():
-    return FileResponse("static/index.html")
-
-@app.get("/test_db")
-async def test_db(db: Session = Depends(get_db)):
-    groups = ScheduleService.get_all_groups(db)
-    return {"groups_count": len(groups), "groups": groups}
-
-@app.get("/groups/", response_model=List[Group])
-async def get_groups(db: Session = Depends(get_db)):
-    groups = ScheduleService.get_all_groups(db)
-    print("Получены группы из БД:", groups)  # Отладка
-    return groups
-
-@app.get("/groups/{group_id}/schedule/{date}", response_model=Day)
-async def get_schedule(
-    group_id: int,
-    date: str,
-    db: Session = Depends(get_db)
-):
-    print(f"Запрос расписания для группы {group_id} на дату {date}")  # Отладка
-    schedule = ScheduleService.get_schedule_by_date(db, group_id, date)
-    if not schedule:
-        print(f"Расписание не найдено")  # Отладка
-        raise HTTPException(status_code=404, detail="Schedule not found")
-    print(f"Найдено расписание: {schedule}")  # Отладка
-    return schedule
-
-@app.get("/days/{day_id}/lessons", response_model=List[Lesson])
-async def get_lessons(day_id: int, db: Session = Depends(get_db)):
-    return ScheduleService.get_lessons_by_day_id(db, day_id)
-
-# Запуск бота при старте приложения
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # Запуск бота
-    dp = setup_bot()
-    asyncio.create_task(dp.start_polling(bot))
+    bot_task = asyncio.create_task(dp.start_polling())
+    yield
+    # Остановка бота
+    bot_task.cancel()
+    try:
+        await bot_task
+    except asyncio.CancelledError:
+        pass
 
-# Закрытие сессии бота при остановке приложения
-@app.on_event("shutdown")
-async def shutdown_event():
-    await bot.session.close() 
+app = FastAPI(lifespan=lifespan, title="Schedule Bot API")
+
+# Подключаем статические файлы
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Создаем экземпляр сервиса расписания
+schedule_service = ScheduleService()
+
+@app.get("/", response_class=HTMLResponse)
+async def read_root(request: Request):
+    """Главная страница с веб-интерфейсом"""
+    return HTMLResponse(content=open("static/index.html").read())
+
+@app.get("/api/schedule")
+async def get_schedule():
+    """API для получения расписания"""
+    try:
+        schedule = await schedule_service.get_all_schedules()
+        return {"success": True, "data": schedule}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/api/schedule/{group}")
+async def get_schedule_by_group(group: str):
+    """API для получения расписания по группе"""
+    try:
+        schedule = await schedule_service.get_schedule_by_group(group)
+        return {"success": True, "data": schedule}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@app.get("/health")
+async def health_check():
+    """Проверка здоровья приложения"""
+    return {"status": "healthy", "message": "Schedule Bot is running"}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port) 

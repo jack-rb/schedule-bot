@@ -1,13 +1,22 @@
-from pydantic_settings import BaseSettings
+import os
+from pydantic import BaseSettings
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "sqlite:///./schedule.db"
-    BOT_TOKEN: str = "your_bot_token_here"
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    DOMAIN: str = "localhost:8000"
-    SUBDOMAIN_ENABLED: bool = False
+    # Настройки бота
+    BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
+    
+    # Настройки базы данных
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./schedule.db")
+    
+    # Настройки приложения
+    DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
+    PORT: int = int(os.getenv("PORT", 8000))
+    
+    # Настройки Telegram Web App
+    WEBAPP_URL: str = os.getenv("WEBAPP_URL", "")
     
     class Config:
         env_file = ".env"
